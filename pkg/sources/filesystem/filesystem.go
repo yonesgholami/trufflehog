@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sync"
 
 	diskbufferreader "github.com/bill-rich/disk-buffer-reader"
 	"github.com/go-errors/errors"
@@ -233,14 +232,14 @@ func (s *Source) Enumerate(ctx context.Context, units chan<- sources.Enumeration
 }
 
 // ChunkUnit implements SourceUnitChunker interface.
-func (s *Source) ChunkUnit(ctx context.Context, unit sources.SourceUnit, chunks chan<- sources.ChunkResult) error {
+func (s *Source) ChunkUnit(ctx context.Context, unit sources.SourceUnit, reporter sources.ChunkReporter) error {
 	path := unit.SourceUnitID()
 	logger := ctx.Logger().WithValues("path", path)
 
 	cleanPath := filepath.Clean(path)
 	fileInfo, err := os.Stat(cleanPath)
 	if err != nil {
-		return common.CancellableWrite(ctx, chunks, sources.ChunkErr(fmt.Errorf("unable to get file info: %w", err)))
+		return reporter.ChunkErr(ctx, fmt.Errorf("unable to get file info: %w", err))
 	}
 
 	ch := make(chan *sources.Chunk)
@@ -260,14 +259,14 @@ func (s *Source) ChunkUnit(ctx context.Context, unit sources.SourceUnit, chunks 
 		if chunk == nil {
 			continue
 		}
-		if err := common.CancellableWrite(ctx, chunks, sources.ChunkOk(*chunk)); err != nil {
+		if err := reporter.ChunkOk(ctx, *chunk); err != nil {
 			return err
 		}
 	}
 
 	if err != nil && err != io.EOF {
 		logger.Info("error scanning filesystem", "error", err)
-		return common.CancellableWrite(ctx, chunks, sources.ChunkErr(err))
+		return reporter.ChunkErr(ctx, err)
 	}
 	return nil
 }
